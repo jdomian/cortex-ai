@@ -1,0 +1,30 @@
+cortex-ai
+=========
+
+This project is a fork of MemPalace (https://github.com/milla-jovovich/mempalace),
+originally created by milla-jovovich and licensed under the MIT License.
+
+The MemPalace engine — including the ChromaDB-backed semantic search, knowledge
+graph, dialect/normalization layer, palace structure, and miner system — was
+authored by the MemPalace Contributors. Their work is the foundation of cortex-ai.
+
+cortex-ai extends and reorganizes that foundation around a four-layer cognitive
+memory model (Identity, Recall, Knowledge, Evolution) inspired by the human
+brain's organization of memory. The architectural framing, layer system, MCP
+server interface, hooks integration, and onboarding flow are additions on top
+of the original engine.
+
+Both the original MemPalace work and the cortex-ai additions are released under
+the MIT License. See LICENSE for full terms.
+
+Original project:
+  Name:       MemPalace
+  Author:     milla-jovovich
+  Repository: https://github.com/milla-jovovich/mempalace
+  License:    MIT
+
+This fork:
+  Name:       cortex-ai (distributed on PyPI as cortex-recall)
+  Author:     Jonathan Domian
+  Repository: https://github.com/jdomian/cortex-ai
+  License:    MIT

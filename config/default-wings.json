@@ -1,0 +1,23 @@
+{
+  "_comment": "Default sample wing/room taxonomy shipped with cortex-ai. Users override this in ~/.cortex/config.json after running `cortex init`. Wings are top-level topics; hall_keywords are seed terms used by the auto-classifier.",
+  "palace_path": "~/.cortex/palace",
+  "collection_name": "cortex_drawers",
+  "topic_wings": [
+    "personal",
+    "work",
+    "projects",
+    "learning",
+    "people",
+    "infrastructure",
+    "troubleshooting"
+  ],
+  "hall_keywords": {
+    "personal": ["preference", "note", "idea", "habit", "goal", "journal"],
+    "work": ["meeting", "project", "deadline", "task", "deliverable"],
+    "projects": ["build", "feature", "bug", "release", "version", "spec"],
+    "learning": ["book", "course", "tutorial", "research", "paper", "concept"],
+    "people": ["contact", "colleague", "client", "introduction", "background"],
+    "infrastructure": ["server", "network", "config", "deploy", "credentials", "environment"],
+    "troubleshooting": ["error", "fix", "bug", "workaround", "solution", "broke", "failed", "crash"]
+  }
+}
