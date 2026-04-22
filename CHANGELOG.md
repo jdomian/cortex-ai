@@ -5,6 +5,17 @@ All notable changes to cortex-ai will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-04-22
+
+### Added
+- `cortex.stm` — deterministic 72h short-term memory: JSONL event log, rolling rollup, secret filter, atomic prune via `fcntl.flock`
+- `cortex.dream` — nightly maintenance orchestrator: prune, consolidate, half-life decay, L5 pattern detection
+- L5 REAL pattern detection: correction event capture, sentence-transformers cosine similarity clustering, adaptive threshold, auto-promotion to feedback rule files
+- 6 new MCP tools: `cortex_stm_log`, `cortex_stm_fetch`, `cortex_dream_run`, `cortex_dream_consolidate`, `cortex_dream_decay`, `cortex_dream_patterns`
+- CLI subcommands: `cortex stm fetch`, `cortex stm rollup`, `cortex stm prune`, `cortex dream run`, `cortex dream decay`
+- Tests shipped in wheel (53 total, including fixtures)
+- `sentence-transformers>=2.2,<4` added as a dependency
+
 ## [0.4.0] — 2026-04-22
 
 First public release.

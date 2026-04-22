@@ -1,0 +1,20 @@
+{"epoch": 1745200000, "project": "project-a", "session_id": "sess-001", "intent_class": "build", "query_head": "build the stm package", "hook_type": "UserPromptSubmit"}
+{"epoch": 1745200060, "project": "project-a", "session_id": "sess-001", "intent_class": "build", "query_head": "implement classifier module", "hook_type": "Stop"}
+{"epoch": 1745201000, "project": "project-b", "session_id": "sess-002", "intent_class": "debug", "query_head": "error in function deployment", "hook_type": "UserPromptSubmit"}
+{"epoch": 1745201300, "project": "project-b", "session_id": "sess-002", "intent_class": "debug", "query_head": "fix the broken import", "hook_type": "Stop"}
+{"epoch": 1745202000, "project": "project-c", "session_id": "sess-003", "intent_class": "research", "query_head": "search for revenue patterns", "hook_type": "UserPromptSubmit"}
+{"epoch": 1745210000, "project": "project-a", "session_id": "sess-004", "intent_class": "infra", "query_head": "check the server status", "hook_type": "UserPromptSubmit"}
+{"epoch": 1745210500, "project": "project-a", "session_id": "sess-004", "intent_class": "infra", "query_head": "restart the service", "hook_type": "Stop"}
+{"epoch": 1745211000, "project": "project-d", "session_id": "sess-005", "intent_class": "other", "query_head": "what is the training pipeline", "hook_type": "UserPromptSubmit"}
+{"epoch": 1745215000, "project": "project-a", "session_id": "sess-006", "intent_class": "chat", "query_head": "hey what do you think about this", "hook_type": "UserPromptSubmit"}
+{"epoch": 1745216000, "project": "project-a", "session_id": "sess-007", "intent_class": "session_end", "query_head": "<session-end>", "hook_type": "Stop"}
+{"epoch": 1745220000, "project": "project-e", "session_id": "sess-008", "intent_class": "research", "query_head": "find maintenance schedule", "hook_type": "UserPromptSubmit"}
+{"epoch": 1745225000, "project": "project-a", "session_id": "sess-009", "intent_class": "build", "query_head": "implement the dream module", "hook_type": "UserPromptSubmit"}
+{"epoch": 1745225500, "project": "project-a", "session_id": "sess-009", "intent_class": "build", "query_head": "ship the pattern detection feature", "hook_type": "Stop"}
+{"epoch": 1745230000, "project": "project-f", "session_id": "sess-010", "intent_class": "debug", "query_head": "bug crash on bluetooth pair", "hook_type": "UserPromptSubmit"}
+{"epoch": 1745240000, "project": "project-a", "session_id": "sess-011", "intent_class": "build", "query_head": "add sentence transformers dep to pyproject", "hook_type": "UserPromptSubmit"}
+{"epoch": 1745241000, "project": "project-a", "session_id": "sess-011", "intent_class": "build", "query_head": "deploy the v050 build", "hook_type": "Stop"}
+{"epoch": 1745245000, "project": "project-c", "session_id": "sess-012", "intent_class": "infra", "query_head": "compose down for upgrade", "hook_type": "UserPromptSubmit"}
+{"epoch": 1745250000, "project": "project-b", "session_id": "sess-013", "intent_class": "research", "query_head": "research api limits", "hook_type": "UserPromptSubmit"}
+{"epoch": 1745255000, "project": "project-a", "session_id": "sess-014", "intent_class": "build", "query_head": "build the test suite for stm package", "hook_type": "UserPromptSubmit"}
+{"epoch": 1745260000, "project": "project-d", "session_id": "sess-015", "intent_class": "other", "query_head": "check model performance metrics", "hook_type": "UserPromptSubmit"}

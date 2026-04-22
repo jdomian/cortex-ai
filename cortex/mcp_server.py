@@ -15,6 +15,16 @@ Tools (read):
 Tools (write):
   cortex_add_drawer      — file verbatim content into a wing/room
   cortex_delete_drawer   — remove a drawer by ID
+
+Tools (stm):
+  cortex_stm_log         — log event to 72h short-term memory
+  cortex_stm_fetch       — fetch/filter 72h event log
+
+Tools (dream):
+  cortex_dream_run       — full nightly maintenance sweep
+  cortex_dream_consolidate — deduplicate/compact palace memories
+  cortex_dream_decay     — apply half-life decay to memories
+  cortex_dream_patterns  — L5 pattern detection and promotion
 """
 
 import argparse
@@ -585,6 +595,68 @@ def tool_diary_read(agent_name: str, last_n: int = 10):
         return {"error": str(e)}
 
 
+# ==================== STM / DREAM TOOLS ====================
+
+def tool_stm_log(**kwargs):
+    try:
+        from cortex.stm import STM
+        stm = STM()
+        ok = stm.log(kwargs)
+        return {"logged": ok}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_stm_fetch(project=None, day=None, session=None, intent=None, full=False, limit=50):
+    try:
+        from cortex.stm import STM
+        stm = STM()
+        events = stm.fetch(project=project, day=day, session=session, intent=intent)
+        if not full and len(events) > limit:
+            events = events[-limit:]
+        return {"events": events, "count": len(events)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_dream_run(palace_path=None):
+    try:
+        from cortex.dream import Dream
+        d = Dream(palace_path=palace_path)
+        return d.run()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_dream_consolidate(palace_path=None):
+    try:
+        from cortex.dream import consolidate
+        return consolidate.run(palace_path=palace_path)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_dream_decay(palace_path=None, half_life_days=30):
+    try:
+        from cortex.dream import decay
+        return decay.run(palace_path=palace_path, half_life_days=half_life_days)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_dream_patterns(action="cluster"):
+    try:
+        from cortex.dream import patterns as _patterns
+        if action == "cluster":
+            return _patterns.cluster_corrections()
+        elif action == "promote":
+            return _patterns.promote_ready_patterns()
+        else:
+            return {"error": f"Unknown action: {action}. Use 'cluster' or 'promote'."}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ==================== MCP PROTOCOL ====================
 
 TOOLS = {
@@ -833,6 +905,80 @@ TOOLS = {
             "required": ["agent_name"],
         },
         "handler": tool_diary_read,
+    },
+    "cortex_stm_log": {
+        "description": "Log an event to the 72h short-term memory JSONL. Filters secrets automatically.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "epoch": {"type": "integer", "description": "Unix timestamp (optional, defaults to now)"},
+                "project": {"type": "string", "description": "Project name"},
+                "session_id": {"type": "string", "description": "Session UUID"},
+                "intent_class": {"type": "string", "description": "Intent class (build, debug, research, infra, chat, other)"},
+                "query_head": {"type": "string", "description": "First ~200 chars of the user query"},
+                "hook_type": {"type": "string", "description": "Hook that fired (UserPromptSubmit, Stop, etc.)"},
+            },
+        },
+        "handler": tool_stm_log,
+    },
+    "cortex_stm_fetch": {
+        "description": "Fetch events from the 72h short-term memory log. Filter by project, day, session, or intent.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string", "description": "Filter by project name (optional)"},
+                "day": {"type": "string", "description": "Filter by day YYYY-MM-DD (optional)"},
+                "session": {"type": "string", "description": "Filter by session_id (optional)"},
+                "intent": {"type": "string", "description": "Filter by intent class (optional)"},
+                "full": {"type": "boolean", "description": "Return all events without limit (default false)"},
+                "limit": {"type": "integer", "description": "Max events to return (default 50)"},
+            },
+        },
+        "handler": tool_stm_fetch,
+    },
+    "cortex_dream_run": {
+        "description": "Run the full Dream nightly maintenance sweep: prune 72h log, consolidate palace, apply decay, cluster L5 patterns.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "palace_path": {"type": "string", "description": "Path to ChromaDB palace (optional, defaults to ~/.cortex/palace)"},
+            },
+        },
+        "handler": tool_dream_run,
+    },
+    "cortex_dream_consolidate": {
+        "description": "Run the Dream consolidation sweep only — deduplicate and compact palace memories.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "palace_path": {"type": "string", "description": "Path to ChromaDB palace (optional)"},
+            },
+        },
+        "handler": tool_dream_consolidate,
+    },
+    "cortex_dream_decay": {
+        "description": "Apply half-life decay to palace memories based on last_accessed timestamp.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "palace_path": {"type": "string", "description": "Path to ChromaDB palace (optional)"},
+                "half_life_days": {"type": "integer", "description": "Half-life in days (default 30)"},
+            },
+        },
+        "handler": tool_dream_decay,
+    },
+    "cortex_dream_patterns": {
+        "description": "L5 pattern detection — cluster correction events into reusable feedback rules.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "Action to perform: 'cluster' (find new patterns) or 'promote' (write ready patterns to feedback files). Default: cluster.",
+                },
+            },
+        },
+        "handler": tool_dream_patterns,
     },
 }
 

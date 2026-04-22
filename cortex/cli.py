@@ -504,6 +504,14 @@ def main():
     # status
     sub.add_parser("status", help="Show what's been filed")
 
+    # stm -- Short-Term Memory (72h recall)
+    from cortex.stm_cli import add_stm_subparser
+    p_stm = add_stm_subparser(sub)
+
+    # dream -- cross-cutting maintenance
+    from cortex.dream_cli import add_dream_subparser
+    p_dream = add_dream_subparser(sub)
+
     args = parser.parse_args()
 
     if not args.command:
@@ -525,6 +533,16 @@ def main():
             return
         args.name = name
         cmd_instructions(args)
+        return
+
+    if args.command == "stm":
+        from cortex.stm_cli import cmd_stm
+        cmd_stm(args)
+        return
+
+    if args.command == "dream":
+        from cortex.dream_cli import cmd_dream
+        cmd_dream(args)
         return
 
     dispatch = {

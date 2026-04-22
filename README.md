@@ -16,11 +16,12 @@ AI agents have amnesia. Every new conversation starts blank. cortex-ai gives the
 | Layer | Name | What it does |
 |-------|------|-------------|
 | L1 | **Identity** | Who the agent is, rules, personality (always loaded) |
-| L2 | **Recall** | Semantic search across everything that happened (on demand) |
+| L2 | **Recall** | 72h deterministic short-term log + semantic search across history (on demand) |
 | L3 | **Knowledge** | External docs, vendor manuals, reference material (RAG) |
 | L4 | **Evolution** | Learns from corrections, promotes patterns to permanent rules |
+| L5 | **Pattern Detection** | Clusters correction events using sentence-transformers, auto-promotes to feedback files |
 
-Plus **DMN** (Default Mode Network): background maintenance that consolidates memories, deduplicates, detects patterns, and manages decay. Runs on cron. Zero token cost.
+Plus **Dream** (Default Mode Network): background maintenance that prunes the 72h log, consolidates memories, applies half-life decay, and runs L5 pattern clustering. Runs on cron. Zero token cost.
 
 ---
 
@@ -72,6 +73,12 @@ Available tools:
 - `cortex_add` — file a new memory
 - `cortex_kg_add` — add a fact to the knowledge graph
 - `cortex_kg_query` — query relationships
+- `cortex_stm_log` — log an event to the 72h short-term memory
+- `cortex_stm_fetch` — fetch and filter the 72h event log
+- `cortex_dream_run` — run full nightly maintenance sweep
+- `cortex_dream_consolidate` — deduplicate and compact palace memories
+- `cortex_dream_decay` — apply half-life decay to memories
+- `cortex_dream_patterns` — L5 pattern detection and promotion
 
 ---
 
@@ -95,4 +102,4 @@ cortex-ai is a fork of [MemPalace](https://github.com/milla-jovovich/mempalace) 
 
 ## Status
 
-cortex-ai v0.4.0 is the first public release. Beta. Expect rough edges. Issues welcome at https://github.com/jdomian/cortex-ai/issues.
+cortex-ai v0.5.0 is in beta. Issues welcome at https://github.com/jdomian/cortex-ai/issues.
