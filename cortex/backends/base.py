@@ -51,6 +51,38 @@ class VectorBackend(ABC):
     def query_similar(self, text: str, k: int = 10) -> List[Dict]:
         """Return top-k most similar entries as list of {id, metadata, distance}."""
 
+    @abstractmethod
+    def add(self, ids: List[str], documents: List[str],
+            metadatas: List[Dict], embeddings: Optional[List[List[float]]] = None) -> None:
+        """Insert memories into the store.
+
+        Args:
+            ids: unique identifiers for each document
+            documents: raw text content for each entry
+            metadatas: metadata dicts (one per document)
+            embeddings: optional pre-computed embeddings; if None, the backend
+                generates them via its configured embedding function
+        """
+
+    @abstractmethod
+    def delete(self, ids: List[str]) -> None:
+        """Remove memories by ID."""
+
+    @abstractmethod
+    def upsert(self, ids: List[str], documents: List[str],
+               metadatas: List[Dict], embeddings: Optional[List[List[float]]] = None) -> None:
+        """Insert or replace memories. Deduplicates by ID.
+
+        Args:
+            ids: unique identifiers (existing IDs are replaced, new ones are inserted)
+            documents: raw text content for each entry
+            metadatas: metadata dicts (one per document)
+            embeddings: optional pre-computed embeddings
+        """
+
+    def close(self) -> None:
+        """Default no-op. Backends with persistent connections override."""
+
 
 class KVBackend(ABC):
     """Small key-value store for thresholds, counters, epochs."""

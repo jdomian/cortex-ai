@@ -92,6 +92,17 @@ Available tools:
 
 ---
 
+## What's new in v0.6.1 — Completed VectorBackend write API + thread-safe memory backends
+
+v0.6.1 closes gaps for external adapter authors.
+
+- **`VectorBackend.add()`, `delete()`, `upsert()`** -- the write API is now part of the ABC, so custom vector adapters (DynamoDB+OpenSearch, Postgres+pgvector) can implement the full storage contract
+- **Thread-safe `Memory*Backend`** -- all memory backends use `threading.Lock`, safe for concurrent Lambda warm-container invocations
+- **Logged plugin discovery** -- broken entry-point plugins log a warning to stderr instead of silently being ignored
+- **Zero breaking changes** -- all v0.6.0 and v0.5.0 code works identically
+
+---
+
 ## What's new in v0.6.0 — Pluggable Backends (Lambda-ready)
 
 v0.6.0 cuts a storage abstraction layer so cortex-recall works on serverless runtimes like AWS Lambda, not just local machines.
@@ -132,4 +143,4 @@ cortex-ai is a fork of [MemPalace](https://github.com/milla-jovovich/mempalace) 
 
 ## Status
 
-cortex-ai v0.5.0 is in beta. Issues welcome at https://github.com/jdomian/cortex-ai/issues.
+cortex-ai v0.6.1 is in beta. Issues welcome at https://github.com/jdomian/cortex-ai/issues.

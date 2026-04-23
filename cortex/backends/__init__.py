@@ -14,14 +14,33 @@ External packages (e.g. cortex-backend-dynamodb) register additional types
 via Python entry_points group "cortex.backends" or by calling register_backend()
 directly at import time.
 
+Entry-point format (in your adapter package's pyproject.toml):
+
+    [project.entry-points."cortex.backends"]
+    "stm.dynamodb"       = "my_adapter:DynamoDBSTM"
+    "vector.opensearch"  = "my_adapter:OpenSearchVector"
+    "kv.dynamodb"        = "my_adapter:DynamoDBKV"
+
+Entry-point name format: "<category>.<name>" (e.g. "stm.dynamodb").
+Categories: "stm", "vector", "kv".
+Value: a callable that accepts **cfg kwargs and returns a backend instance.
+
+register_backend() vs entry_points:
+  - register_backend() runs at import time (immediate, explicit)
+  - entry_points are discovered lazily at first get_backend() call (automatic)
+  Both are valid; prefer entry_points for published adapter packages.
+
 Usage:
     from cortex.backends import get_backend, register_backend
     stm = get_backend("stm")              # filesystem default
     stm = get_backend("stm", config_path="/path/to/config.yaml")
 """
+import logging
 from typing import Callable, Dict, Tuple
 
 from .base import KVBackend, STMBackend, VectorBackend
+
+_log = logging.getLogger("cortex.backends")
 
 # Registry is keyed by (category, type_name) -> factory(cfg_dict) -> backend instance.
 # Populated lazily to avoid importing filesystem/memory modules at package import time,
@@ -53,19 +72,33 @@ def _populate_registry() -> None:
     )
     _REGISTRY[("kv", "memory")] = lambda cfg: MemoryKVBackend()
 
-    # Discover entry_points plugins (optional -- ignore errors if pkg_resources absent)
+    # Discover entry_points plugins -- log failures, never swallow silently
     try:
         import importlib.metadata as ilm
-        for ep in ilm.entry_points(group="cortex.backends"):
-            try:
-                factory = ep.load()
-                parts = ep.name.split(".", 1)
-                if len(parts) == 2:
-                    _REGISTRY[(parts[0], parts[1])] = factory
-            except Exception:
-                pass
-    except Exception:
-        pass
+        eps = ilm.entry_points(group="cortex.backends")
+    except Exception as e:
+        _log.warning("cortex.backends entry_points() call failed: %s", e)
+        eps = []
+
+    for ep in eps:
+        try:
+            factory = ep.load()
+            parts = ep.name.split(".", 1)
+            if len(parts) != 2:
+                _log.warning(
+                    "cortex.backends entry point %r has no category prefix "
+                    "(expected '<category>.<name>' e.g. 'stm.dynamodb'); skipping",
+                    ep.name,
+                )
+                continue
+            _REGISTRY[(parts[0], parts[1])] = factory
+        except Exception as e:
+            _log.warning(
+                "cortex.backends failed to load entry point %r: %s -- "
+                "check that the adapter package is installed and its entry point "
+                "declaration is correct",
+                ep.name, e,
+            )
 
     _REGISTRY_POPULATED = True
 

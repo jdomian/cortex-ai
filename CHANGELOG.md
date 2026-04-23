@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.6.1] - 2026-04-23
+
+### Added
+- `VectorBackend.add()`, `delete()`, `upsert()`, `close()` -- completes the write API for third-party vector adapters
+- `threading.Lock` in all `Memory*Backend` implementations -- safe for concurrent Lambda warm-container invocations
+- Entry-point load errors now log to stderr via `logging` (previously silently swallowed)
+- `FilesystemVectorBackend` gains matching `add`/`delete`/`upsert` impls wrapping ChromaDB
+
+### Fixed
+- Dynamic version string in `cortex.dream.patterns` rule footer (was hardcoded `v0.5.0`)
+- `MemoryVectorBackend.query_similar()` docstring warns `distance=0.0` return is for tests, not semantic search
+
+### Unchanged / Back-compat
+- All v0.6.0 public APIs work identically
+- No config schema changes; existing `~/.cortex/config.yaml` files work untouched
+- Filesystem defaults unchanged
+
+---
+
+## [0.6.0] - 2026-04-23
+
+## [0.6.0] - 2026-04-23
+
+### Added
+- `cortex.backends` package with pluggable STM / Vector / KV interfaces
+- FilesystemSTMBackend, FilesystemVectorBackend, FilesystemKVBackend (default, matches v0.5.0)
+- MemorySTMBackend, MemoryVectorBackend, MemoryKVBackend (tests + Lambda)
+- Backend registry with get_backend() and register_backend() for third-party plugins
+- load_config() and get_backend_config() in cortex/config.py
+- CORTEX_CONFIG_PATH env var (Lambda-friendly config override)
+- docs/DEPLOYMENT.md and docs/BACKENDS.md
+
+### Changed
+- STM.__init__ accepts optional backend= parameter
+- Dream.__init__ accepts optional vector_backend=, stm_backend=, kv_backend=
+- Dream step modules accept backend params; v0.5.0 kwargs unchanged
+
+### Back-compat
+- All v0.5.0 public APIs work identically
+
 All notable changes to cortex-ai will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

@@ -108,6 +108,34 @@ class FilesystemVectorBackend(VectorBackend):
         except Exception:
             return []
 
+    def add(self, ids: List[str], documents: List[str],
+            metadatas: List[Dict], embeddings: Optional[List[List[float]]] = None) -> None:
+        """Insert memories into ChromaDB."""
+        import chromadb  # noqa: F401 -- lazy import preserved for Lambda cold-start
+        col = self._get_collection()
+        kwargs: Dict = {"ids": ids, "documents": documents, "metadatas": metadatas}
+        if embeddings is not None:
+            kwargs["embeddings"] = embeddings
+        col.add(**kwargs)
+
+    def delete(self, ids: List[str]) -> None:
+        """Remove memories by ID from ChromaDB."""
+        import chromadb  # noqa: F401 -- lazy import preserved
+        if not ids:
+            return
+        col = self._get_collection()
+        col.delete(ids=ids)
+
+    def upsert(self, ids: List[str], documents: List[str],
+               metadatas: List[Dict], embeddings: Optional[List[List[float]]] = None) -> None:
+        """Insert or replace memories in ChromaDB. Deduplicates by ID."""
+        import chromadb  # noqa: F401 -- lazy import preserved
+        col = self._get_collection()
+        kwargs: Dict = {"ids": ids, "documents": documents, "metadatas": metadatas}
+        if embeddings is not None:
+            kwargs["embeddings"] = embeddings
+        col.upsert(**kwargs)
+
 
 class FilesystemKVBackend(KVBackend):
     """Key-value backend: one JSON file per key under a directory."""

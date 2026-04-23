@@ -1,8 +1,11 @@
 """Tests for cortex.backends -- registry, filesystem, memory implementations,
 and regression tests for Gemini-identified blockers (#1, #2, #3, Fix-in-Flight #4).
+v0.6.1 additions: VectorBackend write API, thread-safety, entry-point error logging.
 """
+import logging
 import os
 import sys
+import threading
 import time
 
 import pytest
@@ -248,3 +251,198 @@ class TestLazyChromaDBImport:
                 "ChromaDB was loaded at import time. This breaks Lambda cold-start. "
                 "Ensure all chromadb imports are inside function bodies."
             )
+
+
+# ---------------------------------------------------------------------------
+# v0.6.1: VectorBackend write API (add/delete/upsert) on MemoryVectorBackend
+# ---------------------------------------------------------------------------
+
+class TestMemoryVectorBackendWriteAPI:
+    def test_add_then_get_all(self):
+        b = MemoryVectorBackend()
+        b.add(ids=["a", "b"], documents=["doc a", "doc b"],
+              metadatas=[{"x": 1}, {"x": 2}])
+        result = b.get_all(filters={}, include=["metadatas"])
+        assert len(result["metadatas"]) == 2
+
+    def test_delete_removes_entry(self):
+        b = MemoryVectorBackend()
+        b.add(ids=["a", "b"], documents=["doc a", "doc b"],
+              metadatas=[{"x": 1}, {"x": 2}])
+        b.delete(ids=["a"])
+        result = b.get_all(filters={}, include=["metadatas"])
+        assert len(result["metadatas"]) == 1
+        assert result["ids"] == ["b"]
+
+    def test_upsert_updates_existing_and_adds_new(self):
+        b = MemoryVectorBackend()
+        b.add(ids=["a", "b"], documents=["doc a", "doc b"],
+              metadatas=[{"x": 1}, {"x": 2}])
+        b.upsert(ids=["b", "c"], documents=["doc b v2", "doc c"],
+                 metadatas=[{"x": 20}, {"x": 3}])
+        result = b.get_all(filters={}, include=["metadatas"])
+        assert len(result["metadatas"]) == 3
+        xs = sorted(m.get("x") for m in result["metadatas"])
+        assert xs == [1, 3, 20]
+
+    def test_upsert_deduplicates_by_id(self):
+        b = MemoryVectorBackend()
+        b.add(ids=["b"], documents=["doc b"], metadatas=[{"x": 2}])
+        b.upsert(ids=["b"], documents=["doc b v2"], metadatas=[{"x": 20}])
+        result = b.get_all(filters={}, include=["metadatas"])
+        assert len(result["metadatas"]) == 1
+        assert result["metadatas"][0]["x"] == 20
+
+    def test_add_delete_upsert_filesystem(self, tmp_path):
+        pytest.importorskip("chromadb", reason="chromadb not installed in this env")
+        from cortex.backends import FilesystemVectorBackend
+        b = FilesystemVectorBackend(
+            palace_path=str(tmp_path), collection_name="test_write"
+        )
+        b.add(ids=["a"], documents=["hello"], metadatas=[{"t": 1}])
+        result = b.get_all(filters={}, include=["metadatas"])
+        assert len(result["metadatas"]) == 1
+        b.delete(ids=["a"])
+        result = b.get_all(filters={}, include=["metadatas"])
+        assert len(result["metadatas"]) == 0
+
+    def test_upsert_filesystem(self, tmp_path):
+        pytest.importorskip("chromadb", reason="chromadb not installed in this env")
+        from cortex.backends import FilesystemVectorBackend
+        b = FilesystemVectorBackend(
+            palace_path=str(tmp_path), collection_name="test_upsert"
+        )
+        b.add(ids=["x"], documents=["original"], metadatas=[{"v": 1}])
+        b.upsert(ids=["x"], documents=["replaced"], metadatas=[{"v": 99}])
+        result = b.get_all(filters={}, include=["metadatas"])
+        assert len(result["metadatas"]) == 1
+        assert result["metadatas"][0]["v"] == 99
+
+    def test_query_similar_docstring_warns_test_only(self):
+        """query_similar() on memory backend returns distance=0.0 (test stub, not semantic)."""
+        b = MemoryVectorBackend()
+        b.add(ids=["x"], documents=["some text"], metadatas=[{"k": "v"}])
+        results = b.query_similar("anything", k=5)
+        assert len(results) == 1
+        assert results[0]["distance"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# v0.6.1: Thread-safety on memory backends
+# ---------------------------------------------------------------------------
+
+class TestMemorySTMThreadSafety:
+    def test_concurrent_appends_produce_exact_count(self):
+        """200 concurrent appends must produce exactly 200 events with no torn state."""
+        b = MemorySTMBackend()
+
+        def worker(wid):
+            for i in range(20):
+                b.append({
+                    "epoch": int(time.time()) + i,
+                    "project": f"w{wid}",
+                    "query_head": f"e{i}",
+                    "session_id": f"s{wid}",
+                    "dedup_key": f"d{wid}-{i}",
+                })
+
+        threads = [threading.Thread(target=worker, args=(w,)) for w in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        events = b.fetch(window_hours=72, filters={})
+        assert len(events) == 200, f"expected 200, got {len(events)}"
+
+    def test_concurrent_prune_and_append(self):
+        """prune() during concurrent append() must not produce torn state."""
+        b = MemorySTMBackend()
+        old_epoch = int(time.time()) - 7300
+
+        for i in range(50):
+            b.append({"epoch": old_epoch, "project": "p", "query_head": f"old{i}"})
+
+        errors = []
+
+        def pruner():
+            try:
+                b.prune(older_than_hours=1)
+            except Exception as e:
+                errors.append(e)
+
+        def appender(wid):
+            try:
+                for i in range(10):
+                    b.append({
+                        "epoch": int(time.time()),
+                        "project": "p",
+                        "query_head": f"new{wid}{i}",
+                    })
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=appender, args=(w,)) for w in range(5)]
+        threads.append(threading.Thread(target=pruner))
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Concurrent prune+append raised: {errors}"
+
+
+class TestMemoryKVThreadSafety:
+    def test_concurrent_incr_produces_exact_count(self):
+        """1000 concurrent incr() calls must yield exactly 1000."""
+        b = MemoryKVBackend()
+
+        def worker():
+            for _ in range(100):
+                b.incr("counter")
+
+        threads = [threading.Thread(target=worker) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert b.get("counter") == 1000, f"expected 1000, got {b.get('counter')}"
+
+
+# ---------------------------------------------------------------------------
+# v0.6.1: Entry-point error logging (plugin failures log, do not crash)
+# ---------------------------------------------------------------------------
+
+class TestEntryPointErrorLogging:
+    def test_broken_plugin_factory_raises_on_get_backend(self, tmp_path):
+        """A factory that raises must propagate when get_backend() resolves it."""
+        from cortex.backends import register_backend, get_backend
+
+        def broken_factory(cfg):
+            raise RuntimeError("simulated bad adapter")
+
+        register_backend("stm", "broken_v061_test", broken_factory)
+
+        cfg_file = tmp_path / "cfg.yaml"
+        cfg_file.write_text("backends:\n  stm:\n    type: broken_v061_test\n")
+
+        with pytest.raises(RuntimeError, match="simulated bad adapter"):
+            get_backend("stm", config_path=str(cfg_file))
+
+    def test_valid_plugin_registers_and_resolves(self, tmp_path):
+        """A well-formed factory registered directly must resolve via get_backend()."""
+        from cortex.backends import register_backend, get_backend
+
+        class GoodSTM(STMBackend):
+            def append(self, event): return True
+            def fetch(self, window_hours=72, filters=None): return []
+            def prune(self, older_than_hours=72): return {"kept": 0, "dropped": 0}
+
+        register_backend("stm", "good_v061_test", lambda cfg: GoodSTM())
+
+        cfg_file = tmp_path / "cfg.yaml"
+        cfg_file.write_text("backends:\n  stm:\n    type: good_v061_test\n")
+
+        backend = get_backend("stm", config_path=str(cfg_file))
+        assert isinstance(backend, GoodSTM)

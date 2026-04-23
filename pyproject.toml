@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cortex-recall"
-version = "0.6.0"
+version = "0.6.1"
 description = "Four-layer cognitive memory for AI agents — persistent recall, semantic search, knowledge graph, and learned evolution. No API key required."
 readme = "README.md"
 license = {text = "MIT"}

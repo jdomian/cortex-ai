@@ -51,7 +51,7 @@ Flush buffers and disconnect. Default no-op for simple backends.
 
 ### Thread safety
 
-The filesystem implementation uses `fcntl.flock` for atomic prune. Memory implementation is not thread-safe (single-threaded use expected in tests/Lambda).
+The filesystem implementation uses `fcntl.flock` for atomic prune. All `Memory*Backend` implementations use `threading.Lock` -- safe for concurrent Lambda warm-container invocations.
 
 ---
 
@@ -85,7 +85,25 @@ Batch-update metadata for given IDs.
 Return top-k most similar entries.
 
 - Returns list of `{"id": str, "metadata": Dict, "distance": float}`
-- Memory backend returns first-k entries without real embedding (suitable for tests only)
+- Memory backend returns first-k entries without real embedding (suitable for tests only -- `distance=0.0` is a stub)
+
+#### `add(ids: List[str], documents: List[str], metadatas: List[Dict], embeddings: Optional[List[List[float]]] = None) -> None`
+
+Insert memories into the store.
+
+- `embeddings`: optional pre-computed embeddings; if `None`, the backend generates them
+
+#### `delete(ids: List[str]) -> None`
+
+Remove memories by ID. No-op for IDs that don't exist.
+
+#### `upsert(ids: List[str], documents: List[str], metadatas: List[Dict], embeddings: Optional[List[List[float]]] = None) -> None`
+
+Insert or replace memories. Existing IDs are replaced; new IDs are inserted.
+
+#### `close() -> None`
+
+Default no-op. Override in backends with persistent connections (clients, sessions).
 
 ---
 
@@ -152,3 +170,54 @@ register_backend("stm", "dynamodb", lambda cfg: MyDynamoSTM(cfg["table_name"]))
 
 External packages can also register via Python entry_points under group `cortex.backends`.
 Entry point name format: `"<category>.<type_name>"`.
+
+---
+
+## Writing a Custom Backend
+
+Implement the appropriate ABC (`STMBackend`, `VectorBackend`, or `KVBackend`), then
+register via entry_points or `register_backend()`.
+
+### Option 1: Entry-points (recommended for published adapter packages)
+
+In your adapter's `pyproject.toml`:
+
+```toml
+[project.entry-points."cortex.backends"]
+"stm.dynamodb"       = "my_adapter:DynamoDBSTM"
+"vector.opensearch"  = "my_adapter:OpenSearchVector"
+"kv.dynamodb"        = "my_adapter:DynamoDBKV"
+```
+
+Entry-point values must be callables that accept a `cfg` dict and return a backend
+instance. Entry-points are discovered lazily at first `get_backend()` call.
+
+Failed entry-point loads log a warning to stderr -- one bad plugin does not crash cortex.
+
+### Option 2: Direct registration (scripts, notebooks, one-off integrations)
+
+```python
+from cortex.backends import register_backend
+
+def my_factory(cfg: dict):
+    return MySTMBackend(table=cfg.get("table", "cortex-stm"))
+
+register_backend("stm", "my_backend", my_factory)
+```
+
+Then set `type: my_backend` under `backends.stm` in `~/.cortex/config.yaml` (or
+`CORTEX_CONFIG_PATH`).
+
+### Minimum viable VectorBackend
+
+```python
+from cortex.backends.base import VectorBackend
+
+class MyVectorBackend(VectorBackend):
+    def get_all(self, filters=None, include=None): ...
+    def update_metadata(self, ids, metadatas): ...
+    def query_similar(self, text, k=10): ...
+    def add(self, ids, documents, metadatas, embeddings=None): ...
+    def delete(self, ids): ...
+    def upsert(self, ids, documents, metadatas, embeddings=None): ...
+```
