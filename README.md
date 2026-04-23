@@ -92,6 +92,36 @@ Available tools:
 
 ---
 
+## What's new in v0.6.0 — Pluggable Backends (Lambda-ready)
+
+v0.6.0 cuts a storage abstraction layer so cortex-recall works on serverless runtimes like AWS Lambda, not just local machines.
+
+**Three new interfaces** (`STMBackend`, `VectorBackend`, `KVBackend`) with built-in filesystem and in-memory implementations. External packages can register custom backends (DynamoDB, Postgres, etc.) via Python entry_points or direct call.
+
+```python
+# Works on Lambda -- no filesystem, no ChromaDB cold-start
+from cortex.stm import STM
+from cortex.backends.memory import MemorySTMBackend
+
+stm = STM(backend=MemorySTMBackend())
+stm.log({"epoch": 1234567890, "project": "my-lambda", "query_head": "hi"})
+
+# Dream nightly maintenance with memory backends
+from cortex.dream import Dream
+from cortex.backends.memory import MemoryVectorBackend, MemorySTMBackend, MemoryKVBackend
+
+dream = Dream(
+    vector_backend=MemoryVectorBackend(),
+    stm_backend=MemorySTMBackend(),
+    kv_backend=MemoryKVBackend(),
+)
+result = dream.run()
+```
+
+**Zero breaking changes** -- all v0.5.0 code works identically. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for full guide.
+
+---
+
 ## License & attribution
 
 MIT License. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

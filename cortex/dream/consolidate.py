@@ -3,15 +3,19 @@
 Adapted from session-sweeper.py logic. Identifies idle transcript sessions
 not yet saved to Cortex and marks them for follow-up.
 """
-import hashlib
 import os
 import time
 from typing import Dict, Optional
 
 
 def run(palace_path: str = None, idle_threshold_hours: int = 1,
-        collection_name: str = None) -> Dict:
-    """Scan for orphaned session transcripts older than threshold. Returns stats."""
+        collection_name: str = None, vector=None) -> Dict:
+    """Scan for orphaned session transcripts older than threshold. Returns stats.
+
+    v0.5.0 kwargs palace_path and collection_name are preserved for back-compat.
+    New in v0.6.0: optional `vector` backend. When provided, palace_path and
+    collection_name are ignored for the ChromaDB lookup.
+    """
     projects_dir = os.path.expanduser("~/.claude/projects")
     if not os.path.isdir(projects_dir):
         return {"step": "consolidate", "orphaned": 0, "message": "projects dir not found"}
@@ -37,7 +41,9 @@ def run(palace_path: str = None, idle_threshold_hours: int = 1,
             except Exception:
                 continue
 
-    already_saved = _get_saved_session_ids(palace_path, collection_name)
+    already_saved = _get_saved_session_ids(
+        palace_path=palace_path, collection_name=collection_name, vector=vector
+    )
     unsaved = [t for t in orphaned if t["session_id"] not in already_saved]
 
     return {
@@ -49,7 +55,22 @@ def run(palace_path: str = None, idle_threshold_hours: int = 1,
     }
 
 
-def _get_saved_session_ids(palace_path: str = None, collection_name: str = None):
+def _get_saved_session_ids(palace_path: str = None, collection_name: str = None,
+                           vector=None):
+    if vector is not None:
+        # Use the supplied backend -- no ChromaDB import needed.
+        try:
+            result = vector.get_all(filters={"wing": "sessions"}, include=["metadatas"])
+            saved = set()
+            for meta in (result.get("metadatas") or []):
+                sid = meta.get("session_id", "")
+                if sid:
+                    saved.add(sid)
+            return saved
+        except Exception:
+            return set()
+
+    # Legacy filesystem path: lazy-import ChromaDB.
     try:
         import chromadb
         if palace_path is None:

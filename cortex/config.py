@@ -207,3 +207,39 @@ class CortexConfig:
         with open(self._people_map_file, "w") as f:
             json.dump(people_map, f, indent=2)
         return self._people_map_file
+
+
+# ---------------------------------------------------------------------------
+# v0.6.0: YAML config loader for pluggable backend resolution
+# ---------------------------------------------------------------------------
+
+def load_config(path: str = None) -> dict:
+    """Load config.yaml. Precedence:
+    1. explicit path argument
+    2. CORTEX_CONFIG_PATH env var
+    3. ~/.cortex/config.yaml
+    4. empty dict if nothing found (v0.5.0 filesystem defaults apply)
+    """
+    import os
+    if path is None:
+        path = os.environ.get("CORTEX_CONFIG_PATH")
+    if path is None:
+        path = os.path.expanduser("~/.cortex/config.yaml")
+    if not os.path.exists(path):
+        return {}
+    try:
+        import yaml
+        with open(path) as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+
+def get_backend_config(category: str, config_path: str = None) -> dict:
+    """Extract backends.<category> section from config.
+
+    Returns an empty dict if the section is absent (caller applies its own defaults).
+    """
+    cfg = load_config(config_path)
+    backends = cfg.get("backends", {})
+    return backends.get(category, {})

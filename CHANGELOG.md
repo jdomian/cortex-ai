@@ -5,6 +5,28 @@ All notable changes to cortex-ai will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-04-23
+
+### Added
+- `cortex.backends` package with pluggable STM / Vector / KV interfaces
+- `FilesystemSTMBackend`, `FilesystemVectorBackend`, `FilesystemKVBackend` (default, matches v0.5.0 behavior)
+- `MemorySTMBackend`, `MemoryVectorBackend`, `MemoryKVBackend` (for tests and stateless environments)
+- Backend registry with `get_backend()` and `register_backend()` for third-party plugins
+- `load_config()` and `get_backend_config()` in `cortex/config.py` -- YAML config loader for `~/.cortex/config.yaml`
+- `CORTEX_CONFIG_PATH` env var -- overrides default `~/.cortex/config.yaml` location (Lambda-friendly)
+- `docs/DEPLOYMENT.md` -- filesystem, serverless, and custom-backend deployment guide
+- `docs/BACKENDS.md` -- backend interface reference
+
+### Changed
+- `STM.__init__` accepts optional `backend=` parameter (default: filesystem, matches v0.5.0)
+- `Dream.__init__` accepts optional `vector_backend=`, `stm_backend=`, `kv_backend=` parameters (default: filesystem)
+- Dream step modules (`consolidate`, `decay`, `patterns`, `prune_72h`) accept backend params; default behavior unchanged
+
+### Unchanged / Back-compat
+- All v0.5.0 public APIs work identically -- no code changes required for existing installs
+- Default storage is still `~/.cortex/stm/72h.jsonl` + `~/.cortex/palace/` (ChromaDB)
+- No new required dependencies; `pyyaml` is already pinned from v0.5.0
+
 ## [0.5.0] — 2026-04-22
 
 ### Added

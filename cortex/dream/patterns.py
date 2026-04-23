@@ -358,8 +358,13 @@ def log_silhouette_metrics(db_path: str = None):
 
 
 def run(events_path: str = None, db_path: str = None,
-        promotion_threshold: int = None) -> Dict:
-    """Run all L5 pattern steps."""
+        promotion_threshold: int = None, vector=None, kv=None) -> Dict:
+    """Run all L5 pattern steps.
+
+    v0.5.0 kwargs events_path, db_path, promotion_threshold preserved for back-compat.
+    New in v0.6.0: optional vector and kv backend params (reserved for future use
+    when patterns migrate off SQLite onto pluggable backends).
+    """
     cluster_result = cluster_corrections(events_path, db_path)
     promoted = promote_ready_patterns(promotion_threshold, db_path)
     _mark_stale_patterns(db_path)
