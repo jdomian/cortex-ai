@@ -15,7 +15,6 @@ from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
 
-import chromadb
 
 from .palace import SKIP_DIRS, get_collection, file_already_mined
 
@@ -551,7 +550,13 @@ def mine(
         include_ignored=include_ignored,
     )
     if limit > 0:
-        files = files[:limit]
+        # Sort by mtime descending so --limit N = N most-recent files
+        # (was previously os.walk order, which surprised callers like
+        # auto-plan-postprocess that wanted the just-created plan).
+        try:
+            files = sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
+        except OSError:
+            files = files[:limit]
 
     print(f"\n{'=' * 55}")
     print("  Cortex Mine")
@@ -615,6 +620,7 @@ def mine(
 def status(palace_path: str):
     """Show what's been filed in the palace."""
     try:
+        import chromadb  # lazy -- avoids module-level Lambda cold-start cost
         client = chromadb.PersistentClient(path=palace_path)
         col = client.get_collection("cortex_drawers")
     except Exception:
