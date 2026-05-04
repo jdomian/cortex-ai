@@ -1,5 +1,65 @@
 # Changelog
 
+## [Unreleased / claude-server-only] - 2026-05-04
+
+### STM v0.6.0 — sticky project + PostToolUse action capture
+
+**Local hot-patch on Jonathan's claude-server. Not yet upstreamed to the package.**
+See `docs/STM-v0.6.0-IMPROVEMENTS.md` for full design + revisit prompt.
+
+#### Added
+- `cortex.stm.classifier`: `_INTENT_RULES` expanded from 4 → 18 patterns. New intent classes: `memory`, `comms`, `delegate`, `refactor`, `read`, `plan`, `test`. Action-summary patterns (`^cortex_add`, `^write:`, `^bash:git push`, etc.) classified first because they're highest-signal.
+- `cortex.stm.classifier.classify_intent()`: `<turn-end>` markers now return `turn_end` (was `other`) for cleaner rollup filtering.
+
+#### Changed (recall-capture hook, lives outside the package)
+- `~/.claude/hooks/recall-capture.sh`: 3-tier project resolution (`$CLAUDE_PROJECT` env → path-prefix table → basename(cwd) fallback). Solves project tag pollution from multi-project sessions.
+- Same hook: PostToolUse events now emit a real action summary (`write:<path>`, `bash:<cmd>`, `cortex_add:wing=X/room=Y`, `gmail_send:to=X subj=Y`, etc.) instead of `<turn-end>`. Read/Glob/Grep/ToolSearch and noisy bash heads (ls/cat/head/tail/etc.) are skipped to keep signal up. Output runs through existing `filter_secret()`.
+
+#### Why
+2026-05-04 STM trace review showed (a) 4-hour KPMG session got tagged across 5 different `project` values, (b) every assistant action was invisible because PostToolUse hook discarded tool data, (c) every event classified as `other`. The three fixes together restore project locality, make actions searchable, and let intent-based filtering work.
+
+#### Backwards-compat
+- `_INTENT_RULES` order is preserved for the original 4 patterns (build/debug/research/infra) — old query_heads still classify the same way.
+- `<turn-end>` reclassification (other → turn_end) is the only return-value change. If anything depended on `<turn-end>` returning `other`, update that consumer; the rollup script already special-cased the marker text.
+- 72h.jsonl event schema unchanged (still: ts, epoch, session_id, project, cwd, hook_type, intent_class, query_head, dedup_key).
+
+## [0.6.3] - 2026-04-24
+
+### Added
+- `CORTEX_COLLECTION_NAME` env var support in `CortexConfig.collection_name` (env > config file > default)
+- `_resolve_collection_for_read(client, config)` -- read-safe fallback from configured name to legacy `mempalace_drawers`
+- `resolve_collection_name_for_write(client, config)` -- raises `ValueError` on ambiguous write target (split-brain guard)
+- `cortex.palace_graph._get_collection()` now falls back to `mempalace_drawers` on read if primary collection absent
+- N1 backward-compat `palace_path=` keyword arg on `traverse()`, `find_tunnels()`, `graph_stats()` with `DeprecationWarning`
+- Contract test suite at `cortex/tests/contract/test_mempalace_parity.py` (runs against `/tmp/cortex-migration-palace` copy)
+
+### Changed
+- `cortex.searcher.search()` and `search_memories()` use `_resolve_collection_for_read()` instead of hardcoded `"cortex_drawers"`
+
+### Unchanged / Back-compat
+- All v0.6.x public APIs work identically; new kwargs are keyword-only with defaults
+- No config schema changes; existing `~/.cortex/config.yaml` files work untouched
+- Default collection name remains `cortex_drawers` for fresh installs
+
+## [0.6.2] - 2026-04-23
+
+## [0.6.1] - 2026-04-23
+
+### Added
+- VectorBackend.add(), delete(), upsert(), close() -- completes the write API for third-party vector adapters
+- threading.Lock in all Memory*Backend implementations -- safe for concurrent Lambda warm-container invocations
+- Entry-point load errors now log to stderr via logging (previously silently swallowed)
+- FilesystemVectorBackend gains matching add/delete/upsert impls wrapping ChromaDB
+
+### Fixed
+- Dynamic version string in cortex.dream.patterns rule footer (was hardcoded v0.5.0)
+- MemoryVectorBackend.query_similar() docstring warns distance=0.0 return is for tests, not semantic search
+
+### Unchanged / Back-compat
+- All v0.6.0 public APIs work identically
+- No config schema changes; existing ~/.cortex/config.yaml files work untouched
+- Filesystem defaults unchanged
+
 ## [0.6.1] - 2026-04-23
 
 ### Added
