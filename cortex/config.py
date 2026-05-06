@@ -149,7 +149,13 @@ class CortexConfig:
 
     @property
     def collection_name(self):
-        """ChromaDB collection name."""
+        """ChromaDB collection name.
+
+        Resolution order: CORTEX_COLLECTION_NAME env var > config file > default.
+        """
+        env_val = os.environ.get("CORTEX_COLLECTION_NAME")
+        if env_val:
+            return env_val
         return self._file_config.get("collection_name", DEFAULT_COLLECTION_NAME)
 
     @property

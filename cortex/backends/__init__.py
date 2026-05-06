@@ -38,7 +38,7 @@ Usage:
 import logging
 from typing import Callable, Dict, Tuple
 
-from .base import KVBackend, STMBackend, VectorBackend
+from .base import KVBackend, LockLease, STMBackend, VectorBackend
 
 _log = logging.getLogger("cortex.backends")
 
@@ -153,18 +153,20 @@ def _default_type(category: str) -> str:
 
 
 __all__ = [
-    "STMBackend", "VectorBackend", "KVBackend",
+    "STMBackend", "VectorBackend", "KVBackend", "LockLease",
     "get_backend", "register_backend",
     # Concrete classes exposed for isinstance checks
     "FilesystemSTMBackend", "FilesystemVectorBackend", "FilesystemKVBackend",
     "MemorySTMBackend", "MemoryVectorBackend", "MemoryKVBackend",
+    "CollectionSchemaMismatch",
 ]
 
 
 def __getattr__(name):
     """Lazy import concrete classes on demand."""
     _filesystem = {
-        "FilesystemSTMBackend", "FilesystemVectorBackend", "FilesystemKVBackend"
+        "FilesystemSTMBackend", "FilesystemVectorBackend", "FilesystemKVBackend",
+        "CollectionSchemaMismatch",
     }
     _memory = {
         "MemorySTMBackend", "MemoryVectorBackend", "MemoryKVBackend"

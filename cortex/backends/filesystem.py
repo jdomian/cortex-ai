@@ -7,12 +7,18 @@ FilesystemKVBackend: JSON file per key under ~/.cortex/kv/.
 These are the defaults -- matching v0.5.0 behavior exactly.
 ChromaDB is imported lazily inside methods to avoid Lambda cold-start penalty.
 """
+import fcntl
 import json
 import os
 import time
+import uuid
 from typing import Any, Dict, List, Optional
 
-from .base import KVBackend, STMBackend, VectorBackend
+from .base import KVBackend, LockLease, STMBackend, VectorBackend
+
+# Stamp embedded in ChromaDB collection metadata at create/open time.
+# Increment whenever embedder dimension or schema changes in a breaking way.
+_CORTEX_SCHEMA_VERSION = 1
 
 
 class FilesystemSTMBackend(STMBackend):
@@ -54,22 +60,66 @@ class FilesystemSTMBackend(STMBackend):
         return {"kept": kept, "dropped": dropped}
 
 
+class CollectionSchemaMismatch(Exception):
+    """Raised when an existing collection's schema version or embedder fingerprint
+    does not match the current configuration. Run the migration script to re-embed:
+        python -m cortex.scripts.migrate_collection --source <collection> --help
+    """
+
+
 class FilesystemVectorBackend(VectorBackend):
     """Vector backend backed by local ChromaDB.
 
     ChromaDB is imported lazily inside each method to avoid cold-start cost.
+    On first open of an existing collection, the schema version stamp and
+    embedder fingerprint are validated. A CollectionSchemaMismatch is raised
+    if the collection was created with an incompatible embedder.
     """
 
-    def __init__(self, palace_path: str = None, collection_name: str = None):
+    def __init__(self, palace_path: str = None, collection_name: str = None,
+                 embedder_model_id: str = None, embedder_dimension: int = None):
         self.palace_path = os.path.expanduser(
             palace_path or os.environ.get("CORTEX_PALACE_PATH", "~/.cortex/palace")
         )
         self.collection_name = collection_name or "memories"
+        self._embedder_model_id = embedder_model_id or "all-MiniLM-L6-v2"
+        self._embedder_dimension = embedder_dimension or 384
+
+    def _schema_metadata(self) -> dict:
+        return {
+            "cortex_schema_version": _CORTEX_SCHEMA_VERSION,
+            "embedder_model_id": self._embedder_model_id,
+            "embedder_dimension": self._embedder_dimension,
+        }
 
     def _get_collection(self):
-        import chromadb
+        import chromadb  # noqa: PLC0415
         client = chromadb.PersistentClient(path=self.palace_path)
-        return client.get_or_create_collection(self.collection_name)
+        try:
+            col = client.get_collection(self.collection_name)
+            # Validate schema on existing collection
+            meta = col.metadata or {}
+            stored_version = meta.get("cortex_schema_version")
+            stored_model = meta.get("embedder_model_id")
+            stored_dim = meta.get("embedder_dimension")
+            if stored_version is not None:
+                if (stored_model and stored_model != self._embedder_model_id) or \
+                        (stored_dim and stored_dim != self._embedder_dimension):
+                    raise CollectionSchemaMismatch(
+                        f"Collection '{self.collection_name}' was created with "
+                        f"embedder='{stored_model}' dim={stored_dim}, but current config "
+                        f"uses embedder='{self._embedder_model_id}' dim={self._embedder_dimension}. "
+                        "Run: python -m cortex.scripts.migrate_collection --help"
+                    )
+            return col
+        except CollectionSchemaMismatch:
+            raise
+        except Exception:
+            # Collection does not exist -- create with schema stamp
+            return client.get_or_create_collection(
+                self.collection_name,
+                metadata=self._schema_metadata()
+            )
 
     def get_all(self, filters: Optional[Dict] = None,
                 include: Optional[List[str]] = None) -> Dict:
@@ -138,7 +188,12 @@ class FilesystemVectorBackend(VectorBackend):
 
 
 class FilesystemKVBackend(KVBackend):
-    """Key-value backend: one JSON file per key under a directory."""
+    """Key-value backend: one JSON file per key under a directory.
+
+    Locking uses fcntl advisory locks with a separate .lock file per key.
+    The lease token is a UUID4 hex stored alongside the expiry epoch, so
+    a crashed worker's lock will auto-expire even without an active release.
+    """
 
     def __init__(self, path: str = None):
         self._dir = os.path.expanduser(path or "~/.cortex/kv")
@@ -146,6 +201,10 @@ class FilesystemKVBackend(KVBackend):
     def _key_path(self, key: str) -> str:
         safe = key.replace("/", "_").replace("..", "_")
         return os.path.join(self._dir, safe + ".json")
+
+    def _lock_path(self, key: str) -> str:
+        safe = key.replace("/", "_").replace("..", "_")
+        return os.path.join(self._dir, safe + ".lease.json")
 
     def get(self, key: str) -> Optional[Any]:
         p = self._key_path(key)
@@ -170,3 +229,113 @@ class FilesystemKVBackend(KVBackend):
         new_val = current + delta
         self.set(key, new_val)
         return new_val
+
+    # ------------------------------------------------------------------
+    # Locking
+    # ------------------------------------------------------------------
+
+    def supports_locking(self) -> bool:
+        return True
+
+    def acquire_lock(self, key: str, ttl_sec: int) -> Optional[LockLease]:
+        """Try to acquire exclusive lock. Returns LockLease on success, None if held."""
+        os.makedirs(self._dir, exist_ok=True)
+        lp = self._lock_path(key)
+        lf = open(lp, "a+")
+        try:
+            fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            lf.close()
+            return None
+
+        try:
+            lf.seek(0)
+            raw = lf.read().strip()
+            now = time.time()
+            if raw:
+                try:
+                    lease_data = json.loads(raw)
+                    expires = lease_data.get("expires_at", 0)
+                    if expires > now:
+                        # Still held by a non-expired lease
+                        return None
+                except Exception:
+                    pass
+
+            token = uuid.uuid4().hex
+            expires_at = now + ttl_sec
+            lease_data = {"token": token, "expires_at": expires_at}
+            lf.seek(0)
+            lf.truncate()
+            lf.write(json.dumps(lease_data))
+            lf.flush()
+        finally:
+            try:
+                fcntl.flock(lf, fcntl.LOCK_UN)
+            except Exception:
+                pass
+            lf.close()
+
+        return LockLease(key=key, token=token, expires_at=expires_at, _backend=self)
+
+    def renew_lock(self, key: str, token: str, ttl_sec: int) -> bool:
+        """Renew lease if token matches and has not expired."""
+        lp = self._lock_path(key)
+        if not os.path.exists(lp):
+            return False
+        lf = open(lp, "r+")
+        try:
+            fcntl.flock(lf, fcntl.LOCK_EX)
+            try:
+                lf.seek(0)
+                raw = lf.read().strip()
+                if not raw:
+                    return False
+                lease_data = json.loads(raw)
+                if lease_data.get("token") != token:
+                    return False
+                if lease_data.get("expires_at", 0) <= time.time():
+                    return False
+                lease_data["expires_at"] = time.time() + ttl_sec
+                lf.seek(0)
+                lf.truncate()
+                lf.write(json.dumps(lease_data))
+                lf.flush()
+                return True
+            except Exception:
+                return False
+        finally:
+            try:
+                fcntl.flock(lf, fcntl.LOCK_UN)
+            except Exception:
+                pass
+            lf.close()
+
+    def release_lock(self, key: str, token: str) -> bool:
+        """Release lease if token matches. Returns True if released."""
+        lp = self._lock_path(key)
+        if not os.path.exists(lp):
+            return False
+        lf = open(lp, "r+")
+        try:
+            fcntl.flock(lf, fcntl.LOCK_EX)
+            try:
+                lf.seek(0)
+                raw = lf.read().strip()
+                if not raw:
+                    return False
+                lease_data = json.loads(raw)
+                if lease_data.get("token") != token:
+                    return False
+                lf.seek(0)
+                lf.truncate()
+                lf.flush()
+                return True
+            except Exception:
+                return False
+        finally:
+            try:
+                fcntl.flock(lf, fcntl.LOCK_UN)
+            except Exception:
+                pass
+            lf.close()

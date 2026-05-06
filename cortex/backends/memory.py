@@ -12,9 +12,10 @@ invocations sharing a module-level instance.
 """
 import threading
 import time
+import uuid
 from typing import Any, Dict, List, Optional
 
-from .base import KVBackend, STMBackend, VectorBackend
+from .base import KVBackend, LockLease, STMBackend, VectorBackend
 
 
 def _apply_filters(events: List[Dict], window_hours: int, filters: Dict) -> List[Dict]:
@@ -141,11 +142,18 @@ class MemoryVectorBackend(VectorBackend):
 
 
 class MemoryKVBackend(KVBackend):
-    """In-memory key-value store."""
+    """In-memory key-value store.
+
+    Supports locking via threading.Lock per lease key. The lease token is
+    a UUID4 hex stored alongside expiry, matching the FilesystemKVBackend semantics.
+    """
 
     def __init__(self):
         self._store: Dict[str, Any] = {}
         self._lock = threading.Lock()
+        # lease store: key -> {"token": str, "expires_at": float}
+        self._leases: Dict[str, Dict] = {}
+        self._lease_lock = threading.Lock()
 
     def get(self, key: str) -> Optional[Any]:
         with self._lock:
@@ -161,3 +169,45 @@ class MemoryKVBackend(KVBackend):
             new = cur + delta
             self._store[key] = new
             return new
+
+    # ------------------------------------------------------------------
+    # Locking
+    # ------------------------------------------------------------------
+
+    def supports_locking(self) -> bool:
+        return True
+
+    def acquire_lock(self, key: str, ttl_sec: int) -> Optional[LockLease]:
+        """Try to acquire an exclusive in-memory lock. Returns LockLease or None."""
+        now = time.time()
+        with self._lease_lock:
+            existing = self._leases.get(key)
+            if existing and existing.get("expires_at", 0) > now:
+                return None  # still held
+            token = uuid.uuid4().hex
+            expires_at = now + ttl_sec
+            self._leases[key] = {"token": token, "expires_at": expires_at}
+        return LockLease(key=key, token=token, expires_at=expires_at, _backend=self)
+
+    def renew_lock(self, key: str, token: str, ttl_sec: int) -> bool:
+        """Renew lease if token matches and has not expired."""
+        now = time.time()
+        with self._lease_lock:
+            existing = self._leases.get(key)
+            if not existing:
+                return False
+            if existing.get("token") != token:
+                return False
+            if existing.get("expires_at", 0) <= now:
+                return False
+            existing["expires_at"] = now + ttl_sec
+            return True
+
+    def release_lock(self, key: str, token: str) -> bool:
+        """Release lease if token matches."""
+        with self._lease_lock:
+            existing = self._leases.get(key)
+            if not existing or existing.get("token") != token:
+                return False
+            del self._leases[key]
+            return True

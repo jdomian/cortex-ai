@@ -6,8 +6,37 @@ KVBackend (key-value counters and thresholds).
 External packages register implementations via entry_points or direct call
 to register_backend() in cortex.backends.__init__.
 """
+import time
+import uuid
+import warnings
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    pass
+
+
+@dataclass(frozen=True)
+class LockLease:
+    """Returned by KVBackend.acquire_lock() on success.
+
+    Holds the lease token and provides convenience methods for renewing/releasing
+    without holding a reference to the backend explicitly.
+    """
+    key: str
+    token: str
+    expires_at: float
+    _backend: Any  # KVBackend, typed as Any to avoid circular ref
+
+    def renew(self, ttl_sec: int = None) -> bool:
+        """Renew this lease. Returns True if the lease was still held."""
+        ttl = ttl_sec if ttl_sec is not None else max(10, int(self.expires_at - time.time()))
+        return self._backend.renew_lock(self.key, self.token, ttl)
+
+    def release(self) -> bool:
+        """Release this lease. Returns True if successfully released."""
+        return self._backend.release_lock(self.key, self.token)
 
 
 class STMBackend(ABC):
@@ -85,7 +114,16 @@ class VectorBackend(ABC):
 
 
 class KVBackend(ABC):
-    """Small key-value store for thresholds, counters, epochs."""
+    """Small key-value store for thresholds, counters, epochs.
+
+    Locking API (v0.7.0): opt-in via supports_locking(). Backends that return
+    False from supports_locking() may leave the locking methods unimplemented.
+    Callers must check supports_locking() before invoking the lock API.
+
+    Deprecation notice: KVBackend subclasses that do not override supports_locking()
+    will emit a DeprecationWarning starting in v0.7.0. The lock API will become
+    mandatory in v1.0.
+    """
 
     @abstractmethod
     def get(self, key: str) -> Optional[Any]:
@@ -98,3 +136,61 @@ class KVBackend(ABC):
     @abstractmethod
     def incr(self, key: str, delta: int = 1) -> int:
         """Increment integer value by delta. Creates key with value=delta if absent."""
+
+    # ------------------------------------------------------------------
+    # Locking capability (additive surface, not abstract in v0.7.0)
+    # ------------------------------------------------------------------
+
+    def supports_locking(self) -> bool:
+        """Return True if this backend implements the lock API.
+
+        Third-party backends written against v0.6.x return False by default.
+        Override and return True once acquire_lock, renew_lock, release_lock
+        are implemented. The default will emit a DeprecationWarning in a future
+        release to encourage adoption before v1.0 makes locking mandatory.
+        """
+        return False
+
+    def acquire_lock(self, key: str, ttl_sec: int) -> Optional["LockLease"]:
+        """Acquire an exclusive lock on key for up to ttl_sec seconds.
+
+        Returns a LockLease on success, None if the lock is already held.
+        Only valid when supports_locking() returns True.
+
+        Args:
+            key: lock key namespace (e.g. "dream.run")
+            ttl_sec: max hold time in seconds; lock auto-expires after this
+        """
+        if not self.supports_locking():
+            raise NotImplementedError(
+                f"{type(self).__name__}.acquire_lock() called but supports_locking() "
+                "returned False. Override supports_locking() and implement the lock API."
+            )
+        raise NotImplementedError(
+            f"{type(self).__name__} advertises supports_locking()=True but "
+            "did not implement acquire_lock()."
+        )
+
+    def renew_lock(self, key: str, token: str, ttl_sec: int) -> bool:
+        """Renew an existing lock lease. Returns True if the token matched and renewed."""
+        if not self.supports_locking():
+            raise NotImplementedError(
+                f"{type(self).__name__}.renew_lock() called but supports_locking() "
+                "returned False."
+            )
+        raise NotImplementedError(
+            f"{type(self).__name__} advertises supports_locking()=True but "
+            "did not implement renew_lock()."
+        )
+
+    def release_lock(self, key: str, token: str) -> bool:
+        """Release a lock lease. Returns True if the token matched and was released."""
+        if not self.supports_locking():
+            raise NotImplementedError(
+                f"{type(self).__name__}.release_lock() called but supports_locking() "
+                "returned False."
+            )
+        raise NotImplementedError(
+            f"{type(self).__name__} advertises supports_locking()=True but "
+            "did not implement release_lock()."
+        )
