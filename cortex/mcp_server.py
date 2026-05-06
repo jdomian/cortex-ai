@@ -40,7 +40,6 @@ from .config import CortexConfig, sanitize_name, sanitize_content
 from .version import __version__
 from .searcher import search_memories
 from .palace_graph import traverse, find_tunnels, graph_stats
-import chromadb
 
 from .knowledge_graph import KnowledgeGraph
 
@@ -118,6 +117,7 @@ def _get_client():
     """Return a singleton ChromaDB PersistentClient."""
     global _client_cache
     if _client_cache is None:
+        import chromadb  # lazy -- avoids module-level Lambda cold-start cost
         _client_cache = chromadb.PersistentClient(path=_config.palace_path)
     return _client_cache
 
@@ -256,14 +256,24 @@ def tool_get_taxonomy():
     return {"taxonomy": taxonomy}
 
 
-def tool_search(query: str, limit: int = 5, wing: str = None, room: str = None):
-    return search_memories(
+def tool_search(query: str, limit: int = 5, wing: str = None, room: str = None,
+               current_session_id: str = None, exclude_current_session: bool = False):
+    result = search_memories(
         query,
         palace_path=_config.palace_path,
         wing=wing,
         room=room,
         n_results=limit,
+        current_session_id=current_session_id,
+        exclude_current_session=exclude_current_session,
     )
+    # Annotate each hit with age band in a display-friendly way
+    if "results" in result:
+        for hit in result["results"]:
+            band = hit.get("age_band")
+            if band and band != "unknown":
+                hit["age_label"] = f"({band})"
+    return result
 
 
 def tool_check_duplicate(content: str, threshold: float = 0.9):
@@ -806,7 +816,7 @@ TOOLS = {
         "handler": tool_graph_stats,
     },
     "cortex_search": {
-        "description": "Semantic search. Returns verbatim drawer content with similarity scores.",
+        "description": "Semantic search. Returns verbatim drawer content with similarity scores and age labels.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -814,6 +824,14 @@ TOOLS = {
                 "limit": {"type": "integer", "description": "Max results (default 5)"},
                 "wing": {"type": "string", "description": "Filter by wing (optional)"},
                 "room": {"type": "string", "description": "Filter by room (optional)"},
+                "current_session_id": {
+                    "type": "string",
+                    "description": "Current session UUID (optional). Used with exclude_current_session.",
+                },
+                "exclude_current_session": {
+                    "type": "boolean",
+                    "description": "When true, exclude results from the current session. Requires current_session_id.",
+                },
             },
             "required": ["query"],
         },

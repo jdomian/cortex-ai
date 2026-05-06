@@ -18,14 +18,25 @@ No external graph DB needed — built from ChromaDB metadata.
 from collections import defaultdict, Counter
 from .config import CortexConfig
 
-import chromadb
 
 
 def _get_collection(config=None):
     config = config or CortexConfig()
     try:
+        import chromadb  # lazy -- avoids module-level Lambda cold-start cost
         client = chromadb.PersistentClient(path=config.palace_path)
-        return client.get_collection(config.collection_name)
+        primary = config.collection_name
+        try:
+            return client.get_collection(primary)
+        except Exception:
+            # Read fallback: try legacy collection name
+            legacy = "mempalace_drawers"
+            if primary != legacy:
+                try:
+                    return client.get_collection(legacy)
+                except Exception:
+                    pass
+        return None
     except Exception:
         return None
 
@@ -96,13 +107,27 @@ def build_graph(col=None, config=None):
     return nodes, edges
 
 
-def traverse(start_room: str, col=None, config=None, max_hops: int = 2):
+def traverse(start_room: str, col=None, config=None, max_hops: int = 2, *, palace_path=None):
     """
     Walk the graph from a starting room. Find connected rooms
     through shared wings.
 
     Returns list of paths: [{room, wing, hall, hop_distance}]
+
+    Args:
+        palace_path: Deprecated. Pass config=CortexConfig() instead.
     """
+    if palace_path is not None:
+        import warnings
+        warnings.warn(
+            "palace_path is deprecated; pass config=CortexConfig() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if config is None:
+            import os
+            os.environ.setdefault("CORTEX_PALACE_PATH", str(palace_path))
+            config = CortexConfig()
     nodes, edges = build_graph(col, config)
 
     if start_room not in nodes:
@@ -158,11 +183,25 @@ def traverse(start_room: str, col=None, config=None, max_hops: int = 2):
     return results[:50]  # cap results
 
 
-def find_tunnels(wing_a: str = None, wing_b: str = None, col=None, config=None):
+def find_tunnels(wing_a: str = None, wing_b: str = None, col=None, config=None, *, palace_path=None):
     """
     Find rooms that connect two wings (or all tunnel rooms if no wings specified).
-    These are the "hallways" — same named idea appearing in multiple domains.
+    These are the "hallways" -- same named idea appearing in multiple domains.
+
+    Args:
+        palace_path: Deprecated. Pass config=CortexConfig() instead.
     """
+    if palace_path is not None:
+        import warnings
+        warnings.warn(
+            "palace_path is deprecated; pass config=CortexConfig() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if config is None:
+            import os
+            os.environ.setdefault("CORTEX_PALACE_PATH", str(palace_path))
+            config = CortexConfig()
     nodes, edges = build_graph(col, config)
 
     tunnels = []
@@ -190,8 +229,23 @@ def find_tunnels(wing_a: str = None, wing_b: str = None, col=None, config=None):
     return tunnels[:50]
 
 
-def graph_stats(col=None, config=None):
-    """Summary statistics about the palace graph."""
+def graph_stats(col=None, config=None, *, palace_path=None):
+    """Summary statistics about the palace graph.
+
+    Args:
+        palace_path: Deprecated. Pass config=CortexConfig() instead.
+    """
+    if palace_path is not None:
+        import warnings
+        warnings.warn(
+            "palace_path is deprecated; pass config=CortexConfig() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if config is None:
+            import os
+            os.environ.setdefault("CORTEX_PALACE_PATH", str(palace_path))
+            config = CortexConfig()
     nodes, edges = build_graph(col, config)
 
     tunnel_rooms = sum(1 for n in nodes.values() if len(n["wings"]) >= 2)

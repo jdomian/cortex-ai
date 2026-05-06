@@ -16,14 +16,16 @@ Reads directly from ChromaDB (cortex_drawers)
 and ~/.cortex/identity.txt.
 """
 
+import logging
 import os
 import sys
 from pathlib import Path
 from collections import defaultdict
 
-import chromadb
 
 from .config import CortexConfig
+
+_log = logging.getLogger("cortex.layers")
 
 
 # ---------------------------------------------------------------------------
@@ -80,8 +82,11 @@ class Layer1:
     Groups by room, picks the top N moments, compresses to a compact summary.
     """
 
-    MAX_DRAWERS = 15  # at most 15 moments in wake-up
-    MAX_CHARS = 3200  # hard cap on total L1 text (~800 tokens)
+    MAX_DRAWERS = 15        # at most 15 moments in wake-up
+    MAX_CHARS = 3200        # hard cap on total L1 text (~800 tokens)
+    MAX_LINES = 200         # hard cap on output line count
+    MAX_BYTES = 25000       # hard cap on output byte count
+    MAX_FRONTMATTER_LINES = 30  # frontmatter beyond this line is ignored
 
     def __init__(self, palace_path: str = None, wing: str = None):
         cfg = CortexConfig()
@@ -91,6 +96,7 @@ class Layer1:
     def generate(self) -> str:
         """Pull top drawers from ChromaDB and format as compact L1 text."""
         try:
+            import chromadb  # lazy -- avoids module-level Lambda cold-start cost
             client = chromadb.PersistentClient(path=self.palace_path)
             col = client.get_collection("cortex_drawers")
         except Exception:
@@ -174,7 +180,49 @@ class Layer1:
                 lines.append(entry_line)
                 total_len += len(entry_line)
 
-        return "\n".join(lines)
+        output = "\n".join(lines)
+        return self._apply_caps(output)
+
+    def _apply_caps(self, text: str) -> str:
+        """Apply MAX_LINES and MAX_BYTES caps to generated L1 text.
+
+        Line cap applied first; then byte cap trims at the last newline
+        before MAX_BYTES. Appends a truncation notice when either cap fires.
+        Emits a structured log event for observability.
+        """
+        lines = text.split("\n")
+        truncated = False
+
+        # Line cap
+        if len(lines) > self.MAX_LINES:
+            lines = lines[: self.MAX_LINES]
+            truncated = True
+
+        # Byte cap: walk back to last newline at or before MAX_BYTES
+        rejoined = "\n".join(lines)
+        if len(rejoined.encode("utf-8")) > self.MAX_BYTES:
+            truncated = True
+            encoded = rejoined.encode("utf-8")
+            cutoff = encoded[: self.MAX_BYTES].decode("utf-8", errors="ignore")
+            last_nl = cutoff.rfind("\n")
+            if last_nl > 0:
+                rejoined = cutoff[:last_nl]
+            else:
+                rejoined = cutoff
+
+        if truncated:
+            rejoined += "\n... [memory truncated at load: 200-line / 25KB cap]"
+            _log.info(
+                "l1.load.truncated",
+                extra={
+                    "max_lines": self.MAX_LINES,
+                    "max_bytes": self.MAX_BYTES,
+                    "original_lines": len(text.split("\n")),
+                    "original_bytes": len(text.encode("utf-8")),
+                },
+            )
+
+        return rejoined
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +244,7 @@ class Layer2:
     def retrieve(self, wing: str = None, room: str = None, n_results: int = 10) -> str:
         """Retrieve drawers filtered by wing and/or room."""
         try:
+            import chromadb  # lazy -- avoids module-level Lambda cold-start cost
             client = chromadb.PersistentClient(path=self.palace_path)
             col = client.get_collection("cortex_drawers")
         except Exception:
@@ -260,6 +309,7 @@ class Layer3:
     def search(self, query: str, wing: str = None, room: str = None, n_results: int = 5) -> str:
         """Semantic search, returns compact result text."""
         try:
+            import chromadb  # lazy -- avoids module-level Lambda cold-start cost
             client = chromadb.PersistentClient(path=self.palace_path)
             col = client.get_collection("cortex_drawers")
         except Exception:
@@ -316,6 +366,7 @@ class Layer3:
     ) -> list:
         """Return raw dicts instead of formatted text."""
         try:
+            import chromadb  # lazy -- avoids module-level Lambda cold-start cost
             client = chromadb.PersistentClient(path=self.palace_path)
             col = client.get_collection("cortex_drawers")
         except Exception:
@@ -437,6 +488,7 @@ class MemoryStack:
 
         # Count drawers
         try:
+            import chromadb  # lazy -- avoids module-level Lambda cold-start cost
             client = chromadb.PersistentClient(path=self.palace_path)
             col = client.get_collection("cortex_drawers")
             count = col.count()

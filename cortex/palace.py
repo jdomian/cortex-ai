@@ -5,7 +5,6 @@ Consolidates ChromaDB access patterns used by both miners and the MCP server.
 """
 
 import os
-import chromadb
 
 SKIP_DIRS = {
     ".git",
@@ -41,6 +40,7 @@ def get_collection(palace_path: str, collection_name: str = "cortex_drawers"):
         os.chmod(palace_path, 0o700)
     except (OSError, NotImplementedError):
         pass
+    import chromadb  # lazy -- avoids module-level Lambda cold-start cost
     client = chromadb.PersistentClient(path=palace_path)
     try:
         return client.get_collection(collection_name)
